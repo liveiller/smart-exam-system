@@ -24,6 +24,7 @@ service.interceptors.response.use(
       ElMessage.error(res.message || '请求失败')
       return Promise.reject(new Error(res.message))
     }
+    console.log('API响应:', response.config.url, res)
     return res
   },
   error => {

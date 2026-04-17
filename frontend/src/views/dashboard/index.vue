@@ -1,8 +1,16 @@
 <template>
   <div class="dashboard">
     <div class="welcome-section">
-      <h1>👋 欢迎回来，{{ userStore.userName }}</h1>
-      <p class="date">{{ currentDate }}</p>
+      <div class="welcome-content">
+        <div>
+          <h1>👋 欢迎回来，{{ userStore.userName }}</h1>
+          <p class="date">{{ currentDate }}</p>
+        </div>
+        <el-button @click="refreshData" :loading="loading" type="primary" plain>
+          <el-icon><Refresh /></el-icon>
+          刷新数据
+        </el-button>
+      </div>
     </div>
 
     <!-- 统计卡片 -->
@@ -109,14 +117,26 @@
       </template>
 
       <el-table :data="todayTasks" style="width: 100%" :empty-text="emptyText" v-loading="loading">
-        <el-table-column prop="knowledge_name" label="知识点" />
-        <el-table-column prop="subject_name" label="学科" width="120" />
-        <el-table-column prop="question_count" label="题目数" width="100" />
+        <el-table-column prop="knowledge_name" label="知识点">
+          <template #default="{ row }">
+            {{ row.knowledge_name || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="subject_name" label="学科" width="120">
+          <template #default="{ row }">
+            {{ row.subject_name || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="question_count" label="题目数" width="100">
+          <template #default="{ row }">
+            {{ row.question_count || 0 }}
+          </template>
+        </el-table-column>
         <el-table-column prop="memory_level" label="记忆水平" width="150">
           <template #default="{ row }">
             <el-progress
-              :percentage="row.memory_level"
-              :color="getMemoryColor(row.memory_level)"
+              :percentage="row.memory_level || 0"
+              :color="getMemoryColor(row.memory_level || 0)"
               :stroke-width="8"
             />
           </template>
@@ -134,16 +154,20 @@
 </template>
 
 <script setup>
-import { reactive, computed, ref, onMounted } from 'vue'
+import { reactive, computed, ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { Refresh } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import { getTodayTasks } from '@/api/modules/review'
+import { getOverallStats } from '@/api/modules/analysis'
 import { getKnowledgeName, getSubjectNameByKnowledge } from '@/data/questions'
 
 dayjs.locale('zh-cn')
 
+const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const loading = ref(false)
@@ -168,32 +192,34 @@ const emptyText = '🎉 暂无待复习任务，去刷题吧！'
 // 计算统计数据
 const calculateStats = async () => {
   try {
-    // 1. 从 localStorage 获取历史记录（作为后备方案）
-    const history = JSON.parse(localStorage.getItem('practiceHistory') || '[]')
-    stats.totalQuestions = history.reduce((sum, h) => sum + (h.questionCount || 0), 0)
+    console.log('开始计算统计数据...')
 
-    // 2. 正确率
-    if (history.length > 0) {
-      const totalCorrect = history.reduce((sum, h) => sum + (h.correctCount || 0), 0)
-      const totalQuestions = history.reduce((sum, h) => sum + (h.questionCount || 0), 0)
-      stats.accuracy = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0
-    } else {
-      stats.totalQuestions = 1234
-      stats.accuracy = 78.5
+    // 清理 localStorage 中的旧模拟数据
+    localStorage.removeItem('practiceHistory')
+    localStorage.removeItem('reviewRecords')
+
+    // 统计数据初始化为 0
+    stats.studyDays = 1
+    stats.totalQuestions = 0
+    stats.pendingReview = 0
+    stats.accuracy = 0
+
+    // 从后端 API 获取整体统计
+    const statsResponse = await getOverallStats()
+    console.log('统计API响应:', statsResponse)
+
+    if (statsResponse && statsResponse.data) {
+      const data = statsResponse.data
+      stats.totalQuestions = parseInt(data.totalQuestions) || 0
+      const correctCount = parseInt(data.correctQuestions) || 0
+      const totalCount = stats.totalQuestions
+      stats.accuracy = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0
+      console.log('统计数据:', data, 'totalQuestions:', stats.totalQuestions, 'accuracy:', stats.accuracy)
     }
 
-    // 3. 学习天数
-    if (history.length > 0) {
-      const dates = [...new Set(history.map(h => h.date?.split(' ')[0]))]
-      stats.studyDays = dates.length || 1
-    } else {
-      stats.studyDays = 45
-    }
-
-    // 4. 待复习任务数
-    stats.pendingReview = todayTasks.value.length
+    console.log('最终统计数据:', stats)
   } catch (error) {
-    console.error('计算统计数据失败:', error)
+    console.error('获取统计数据失败:', error)
   }
 }
 
@@ -201,10 +227,24 @@ const calculateStats = async () => {
 const loadTodayTasks = async () => {
   loading.value = true
   try {
+    console.log('开始加载今日复习任务...')
     // 尝试从后端 API 获取
     const response = await getTodayTasks()
-    todayTasks.value = response.data
+    console.log('今日任务API响应:', response)
+    console.log('今日任务数据类型:', typeof response)
+    console.log('今日任务数据:', response.data)
+
+    if (response && response.code === 200) {
+      todayTasks.value = response.data || []
+      stats.pendingReview = todayTasks.value.length
+      console.log('今日任务列表:', todayTasks.value)
+    } else {
+      console.error('获取今日任务失败:', response)
+      todayTasks.value = []
+      stats.pendingReview = 0
+    }
   } catch (error) {
+    console.error('获取今日复习任务失败:', error)
     console.warn('无法从后端获取复习任务，使用本地数据')
     // 如果 API 调用失败，使用本地数据
     const reviewRecords = JSON.parse(localStorage.getItem('reviewRecords') || '[]')
@@ -238,9 +278,36 @@ const startReviewTask = (row) => {
   router.push('/review/doing')
 }
 
-onMounted(async () => {
+// 刷新数据
+const refreshData = async () => {
+  console.log('刷新仪表板数据...', new Date().toISOString())
   await loadTodayTasks()
   await calculateStats()
+}
+
+onMounted(async () => {
+  console.log('仪表板组件已挂载')
+  await refreshData()
+})
+
+// 监听路由变化，当导航到仪表板时刷新数据
+watch(
+  () => route.fullPath,
+  (newPath, oldPath) => {
+    console.log('路由变化:', oldPath, '->', newPath)
+    if (newPath.startsWith('/dashboard')) {
+      console.log('导航到仪表板，刷新数据')
+      refreshData()
+    }
+  }
+)
+
+// 监听页面可见性变化，当页面重新获得焦点时刷新数据
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && route.path === '/dashboard') {
+    console.log('页面重新可见，刷新数据')
+    refreshData()
+  }
 })
 </script>
 
@@ -248,6 +315,12 @@ onMounted(async () => {
 .dashboard {
   .welcome-section {
     margin-bottom: 24px;
+
+    .welcome-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
 
     h1 {
       font-size: 24px;

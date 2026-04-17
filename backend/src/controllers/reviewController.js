@@ -10,23 +10,22 @@ exports.getTodayTasks = async (req, res) => {
         MIN(rr.id) as id,
         rr.knowledge_id,
         rr.review_stage,
-        AVG(rr.correct_count) as correct_count,
-        AVG(rr.total_review_count) as total_review_count,
+        MAX(rr.correct_count) as correct_count,
+        MAX(rr.total_review_count) as total_review_count,
         AVG(rr.memory_level) as memory_level,
         MIN(rr.next_review_time) as next_review_time,
+        COUNT(DISTINCT rr.question_id) as question_count,
         kp.name as knowledge_name,
-        s.name as subject_name,
-        COUNT(*) as question_count
+        s.name as subject_name
       FROM review_records rr
       LEFT JOIN knowledge_points kp ON rr.knowledge_id = kp.id
       LEFT JOIN chapters c ON kp.chapter_id = c.id
       LEFT JOIN subjects s ON c.subject_id = s.id
       WHERE rr.user_id = ?
         AND rr.status = 0
-        AND rr.next_review_time <= NOW()
-        AND rr.next_review_time >= DATE_SUB(NOW(), INTERVAL 1 DAY)
+        AND rr.memory_level < 80
       GROUP BY rr.knowledge_id, rr.review_stage, kp.name, s.name
-      ORDER BY AVG(rr.memory_level) ASC, MIN(rr.next_review_time) ASC
+      ORDER BY MIN(rr.next_review_time) ASC
     `, [userId]);
 
     // 将 AVG 返回的字符串转换为数字
@@ -34,7 +33,7 @@ exports.getTodayTasks = async (req, res) => {
       task.correct_count = Math.round(task.correct_count);
       task.total_review_count = Math.round(task.total_review_count);
       task.memory_level = Math.round(task.memory_level);
-      task.question_count = task.question_count; // 已在查询中计算
+      task.question_count = task.question_count || 0;
     });
 
     res.status(200).json({
@@ -76,10 +75,14 @@ exports.getReviewQuestions = async (req, res) => {
 
     const [questions] = await pool.execute(query, params);
 
-    // 解析 JSON 格式的选项
+    // 解析 JSON 格式的选项（MySQL2已自动解析，如果是字符串才需要手动解析）
     questions.forEach(q => {
-      if (q.options) {
-        q.options = JSON.parse(q.options);
+      if (typeof q.options === 'string') {
+        try {
+          q.options = JSON.parse(q.options);
+        } catch (e) {
+          console.warn(`Failed to parse options for question ${q.id}:`, e.message);
+        }
       }
     });
 
@@ -120,11 +123,11 @@ exports.submitReview = async (req, res) => {
           [userId, result.questionId]
         );
 
-        const currentStage = record[0]?.review_stage || 1;
-        nextStage = Math.min(currentStage + 1, 9);
+        const currentStage = record[0]?.review_stage || 0;
+        nextStage = Math.min(currentStage + 1, 8);
 
         // 根据阶段设置复习间隔（分钟）
-        const intervals = [5, 30, 720, 1440, 2880, 5760, 10080, 20160, 43200];
+        const intervals = [5, 30, 720, 1440, 2880, 5760, 10080, 20160];
         nextInterval = intervals[Math.min(nextStage - 1, intervals.length - 1)];
       } else {
         // 答错：重新开始
@@ -195,8 +198,8 @@ exports.getReviewStats = async (req, res) => {
 
     // 今日待复习数量
     const [todayTotal] = await pool.execute(
-      `SELECT COUNT(*) as count FROM review_records
-       WHERE user_id = ? AND status = 0 AND next_review_time <= NOW() AND next_review_time >= CURDATE()`,
+      `SELECT COUNT(DISTINCT knowledge_id) as count FROM review_records
+       WHERE user_id = ? AND status = 0 AND memory_level < 80`,
       [userId]
     );
 

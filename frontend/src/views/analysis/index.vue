@@ -84,13 +84,13 @@
               <div class="info">
                 <div class="name">{{ item.name }}</div>
                 <el-progress
-                  :percentage="item.mastery"
+                  :percentage="item.mastery || 0"
                   :color="getProgressColor(item.mastery)"
                   :stroke-width="6"
                 />
               </div>
               <div class="score" :style="{ color: getProgressColor(item.mastery) }">
-                {{ item.mastery }}%
+                {{ item.mastery || 0 }}%
               </div>
             </div>
           </div>
@@ -138,18 +138,18 @@
         </el-table-column>
         <el-table-column label="操作" width="150">
           <template #default="{ row }">
-            <el-button 
-              v-if="row.level === 2" 
-              type="primary" 
-              link 
+            <el-button
+              v-if="row.level === 2"
+              type="primary"
+              link
               @click="practiceKnowledge(row)"
             >
               针对性练习
             </el-button>
-            <el-button 
-              v-if="row.level === 2" 
-              type="success" 
-              link 
+            <el-button
+              v-if="row.level === 2"
+              type="success"
+              link
               @click="showRecommendation(row)"
             >
               推荐
@@ -203,7 +203,8 @@
 
 <script setup>
 import { ref, reactive, onMounted, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { request } from '@/api/index'
+import { useRouter, useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { subjects } from '@/data/subjects'
 import {
@@ -214,11 +215,11 @@ import {
   getRecommendQuestions,
   getProgressColor,
   getMasteryText,
-  getMasteryTagType,
-  initMockAnalysisData
+  getMasteryTagType
 } from '@/utils/analysis'
 
 const router = useRouter()
+const route = useRoute()
 
 // 当前学科
 const currentSubject = ref(1)
@@ -290,12 +291,17 @@ const getSuggestion = (mastery) => {
 
 // 渲染雷达图
 const renderRadarChart = () => {
-  if (!radarChartRef.value) return
-  
+  console.log('渲染雷达图...', radarChartRef.value, radarData.value)
+  if (!radarChartRef.value) {
+    console.warn('雷达图容器不存在')
+    return
+  }
+
   if (!radarChart) {
+    console.log('初始化雷达图实例')
     radarChart = echarts.init(radarChartRef.value)
   }
-  
+
   const option = {
     radar: {
       indicator: radarData.value.indicators,
@@ -325,37 +331,70 @@ const renderRadarChart = () => {
       }]
     }]
   }
-  
+
+  console.log('雷达图配置:', option)
   radarChart.setOption(option)
 }
 
 // 加载所有数据
-const loadData = () => {
-  // 获取雷达图数据
-  const radar = getRadarChartData(currentSubject.value)
-  radarData.value = {
-    indicators: radar.indicators,
-    values: radar.values
+const loadData = async () => {
+  try {
+    // 从后端获取数据，传递学科参数
+    const statsData = await request.get(`/analysis/stats?subjectId=${currentSubject.value}`)
+
+    if (statsData.code === 200) {
+      const stats = statsData.data
+
+      // 整体统计
+      overallStats.masteryRate = stats.masteryRate || 0
+      overallStats.totalQuestions = stats.totalQuestions || 0
+      overallStats.answeredQuestions = stats.answeredQuestions || 0
+      overallStats.correctQuestions = stats.correctQuestions || 0
+      overallStats.wrongQuestions = stats.wrongQuestions || 0
+
+      // 获取雷达图数据
+      const radarResponse = await request.get(`/analysis/radar?subjectId=${currentSubject.value}`)
+      if (radarResponse.code === 200) {
+        radarData.value = {
+          indicators: radarResponse.data.indicators,
+          values: radarResponse.data.values
+        }
+      }
+
+      // 获取薄弱点
+      const weakData = await request.get(`/analysis/weak?subjectId=${currentSubject.value}&limit=5`)
+
+      if (weakData.code === 200) {
+        weakTop5.value = weakData.data || []
+      }
+
+      // 获取知识图谱
+      const treeData = await request.get(`/analysis/tree?subjectId=${currentSubject.value}`)
+
+      if (treeData.code === 200) {
+        knowledgeTree.value = treeData.data || []
+      }
+    } else {
+      console.error('获取分析数据失败:', statsData.message)
+    }
+
+    // 渲染雷达图
+    nextTick(() => {
+      console.log('准备渲染雷达图')
+      renderRadarChart()
+    })
+  } catch (error) {
+    console.error('加载分析数据失败:', error)
+    // 初始化为 0
+    overallStats.masteryRate = 0
+    overallStats.totalQuestions = 0
+    overallStats.answeredQuestions = 0
+    overallStats.correctQuestions = 0
+    overallStats.wrongQuestions = 0
+    radarData.value = { indicators: [], values: [] }
+    weakTop5.value = []
+    knowledgeTree.value = []
   }
-  
-  // 获取薄弱点
-  weakTop5.value = getWeakKnowledgeTop(currentSubject.value, 5)
-  
-  // 获取知识图谱
-  knowledgeTree.value = getKnowledgeTreeData(currentSubject.value)
-  
-  // 获取整体统计
-  const stats = getOverallStats(currentSubject.value)
-  overallStats.masteryRate = stats.masteryRate
-  overallStats.totalQuestions = stats.totalQuestions
-  overallStats.answeredQuestions = stats.answeredQuestions
-  overallStats.correctQuestions = stats.correctQuestions
-  overallStats.wrongQuestions = stats.wrongQuestions
-  
-  // 重新渲染雷达图
-  nextTick(() => {
-    renderRadarChart()
-  })
 }
 
 // 学科变更
@@ -399,9 +438,20 @@ window.addEventListener('resize', () => {
 })
 
 onMounted(() => {
-  initMockAnalysisData()
+  console.log('靶向分析页面已挂载')
   loadData()
 })
+
+// 监听路由变化，当导航到靶向分析页面时刷新数据
+watch(
+  () => route.path,
+  (newPath) => {
+    if (newPath === '/analysis') {
+      console.log('导航到靶向分析页面，刷新数据')
+      loadData()
+    }
+  }
+)
 </script>
 
 <style lang="scss" scoped>
@@ -462,8 +512,13 @@ onMounted(() => {
         border-radius: 8px;
 
         .value {
-          font-size: 28px;
+          font-size: 24px;
           font-weight: bold;
+          margin-bottom: 8px;
+
+          &.primary {
+            color: #409EFF;
+          }
 
           &.success {
             color: #67C23A;
@@ -476,49 +531,57 @@ onMounted(() => {
 
         .label {
           color: #999;
-          font-size: 13px;
+          font-size: 14px;
         }
       }
     }
   }
 
   .weak-top-card {
+    margin-bottom: 20px;
+
     .weak-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+
       .weak-item {
         display: flex;
         align-items: center;
-        padding: 12px 0;
-        border-bottom: 1px solid #eee;
+        padding: 12px 16px;
+        background: #f5f7fa;
+        border-radius: 8px;
         cursor: pointer;
-        transition: background 0.2s;
+        transition: all 0.2s;
 
         &:hover {
-          background: #f5f7fa;
+          background: #e6e8eb;
         }
 
         .rank {
           width: 30px;
           height: 30px;
+          border-radius: 50%;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: #f0f2f5;
-          border-radius: 50%;
           font-weight: bold;
+          font-size: 14px;
           margin-right: 12px;
+          flex-shrink: 0;
 
           &.first {
-            background: #FFD700;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
             color: white;
           }
 
           &.second {
-            background: #C0C0C0;
+            background: linear-gradient(135deg, #C0C0C0, #A0A0A0);
             color: white;
           }
 
           &.third {
-            background: #CD7F32;
+            background: linear-gradient(135deg, #CD7F32, #B87333);
             color: white;
           }
         }
@@ -527,14 +590,18 @@ onMounted(() => {
           flex: 1;
 
           .name {
-            margin-bottom: 6px;
-            font-weight: 500;
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 4px;
+          }
+
+          .el-progress {
+            margin-top: 4px;
           }
         }
 
         .score {
-          min-width: 50px;
-          text-align: right;
+          font-size: 18px;
           font-weight: bold;
         }
       }
@@ -542,35 +609,39 @@ onMounted(() => {
   }
 
   .knowledge-tree-card {
-    margin-top: 20px;
+    margin-bottom: 20px;
   }
 
   .recommend-content {
     .weak-info {
-      padding: 16px;
-      background: #f5f7fa;
-      border-radius: 8px;
-      margin-bottom: 20px;
+      margin-bottom: 24px;
 
       h4 {
-        margin-bottom: 10px;
+        font-size: 16px;
         color: #333;
+        margin-bottom: 8px;
       }
 
       p {
         color: #666;
-        margin-bottom: 5px;
-      }
+        font-size: 14px;
+        line-height: 1.6;
 
-      .suggestion {
-        color: #409EFF;
-        margin-top: 10px;
+        &.suggestion {
+          margin-top: 8px;
+          padding: 12px;
+          background: #f0f9ff;
+          border-left: 3px solid #409EFF;
+          border-radius: 4px;
+        }
       }
     }
 
     .recommend-questions {
       h5 {
-        margin-bottom: 15px;
+        font-size: 14px;
+        color: #333;
+        margin-bottom: 12px;
       }
     }
   }

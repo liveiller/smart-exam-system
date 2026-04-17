@@ -115,6 +115,7 @@ import {
   getMemoryColor,
   formatNextReviewTime
 } from '@/utils/ebbinghaus'
+import { request } from '@/api/index'
 
 const router = useRouter()
 const chartRef = ref(null)
@@ -134,64 +135,43 @@ const todayTasks = ref([])
 const reviewRecords = ref([])
 
 // 加载复习数据
-const loadReviewData = () => {
-  const stored = localStorage.getItem('reviewRecords')
-  
-  if (stored) {
-    reviewRecords.value = JSON.parse(stored)
-  } else {
-    // 初始化模拟复习数据
-    const now = new Date()
-    reviewRecords.value = [
-      {
-        id: 1,
-        questionId: 1,
-        knowledgeId: 10102, // 极限的定义
-        reviewStage: 1,
-        correctCount: 0,
-        totalReviewCount: 1,
-        lastReviewTime: new Date(now - 30 * 60 * 1000).toISOString(),
-        nextReviewTime: now.toISOString(),
-        memoryLevel: 45,
-        status: 0
-      },
-      {
-        id: 2,
-        questionId: 6,
-        knowledgeId: 10201, // 导数的定义
-        reviewStage: 1,
-        correctCount: 1,
-        totalReviewCount: 1,
-        lastReviewTime: new Date(now - 60 * 60 * 1000).toISOString(),
-        nextReviewTime: now.toISOString(),
-        memoryLevel: 60,
-        status: 0
-      },
-      {
-        id: 3,
-        questionId: 9,
-        knowledgeId: 20101, // 高频词汇 A-D
-        reviewStage: 2,
-        correctCount: 2,
-        totalReviewCount: 2,
-        lastReviewTime: new Date(now - 12 * 60 * 60 * 1000).toISOString(),
-        nextReviewTime: now.toISOString(),
-        memoryLevel: 72,
-        status: 0
+const loadReviewData = async () => {
+  // 移除 localStorage 的使用，只从后端获取
+  console.log('加载复习数据...')
+
+  try {
+    const statsData = await request.get('/review/stats')
+
+    if (statsData.code === 200) {
+      reviewStats.todayTotal = statsData.data.todayTotal
+      reviewStats.completed = statsData.data.completed
+      reviewStats.continuous = statsData.data.continuous
+      reviewStats.retention = statsData.data.retention
+
+      // 获取今日任务
+      const tasksData = await request.get('/review/tasks')
+
+      if (tasksData.code === 200) {
+        todayTasks.value = tasksData.data
       }
-    ]
-    localStorage.setItem('reviewRecords', JSON.stringify(reviewRecords.value))
+    } else {
+      console.error('获取复习统计失败:', statsData.message)
+      // 统计数据初始化为 0
+      reviewStats.todayTotal = 0
+      reviewStats.completed = 0
+      reviewStats.continuous = 0
+      reviewStats.retention = 0
+      todayTasks.value = []
+    }
+  } catch (error) {
+    console.error('获取复习数据失败:', error)
+    // 统计数据初始化为 0
+    reviewStats.todayTotal = 0
+    reviewStats.completed = 0
+    reviewStats.continuous = 0
+    reviewStats.retention = 0
+    todayTasks.value = []
   }
-  
-  // 生成今日任务
-  todayTasks.value = generateReviewTasks(reviewRecords.value)
-  
-  // 更新统计
-  const stats = getReviewStatistics(reviewRecords.value)
-  reviewStats.todayTotal = stats.todayTotal
-  reviewStats.completed = stats.completed
-  reviewStats.continuous = stats.continuous
-  reviewStats.retention = stats.retention
 }
 
 // 渲染艾宾浩斯曲线

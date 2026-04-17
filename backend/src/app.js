@@ -12,6 +12,7 @@ const questionRoutes = require('./routes/questions');
 const reviewRoutes = require('./routes/review');
 const notebookRoutes = require('./routes/notebook');
 const analysisRoutes = require('./routes/analysis');
+const databaseRoutes = require('./routes/database');
 
 // 导入中间件
 const errorHandler = require('./middleware/errorHandler');
@@ -77,6 +78,7 @@ app.use('/api/questions', questionRoutes);
 app.use('/api/review', reviewRoutes);
 app.use('/api/notebook', notebookRoutes);
 app.use('/api/analysis', analysisRoutes);
+app.use('/api/database', databaseRoutes);
 
 // 404 处理
 app.use((req, res) => {

@@ -51,6 +51,35 @@ exports.register = async (req, res) => {
 
     const userId = result.insertId;
 
+    // 初始化用户的做题数据为0
+    try {
+      // 先删除该用户的所有旧数据
+      await pool.execute('DELETE FROM notebook WHERE user_id = ?', [userId]);
+      await pool.execute('DELETE FROM review_continuous WHERE user_id = ?', [userId]);
+      await pool.execute('DELETE FROM review_records WHERE user_id = ?', [userId]);
+
+      // 插入初始化记录
+      await pool.execute(
+        `INSERT INTO review_continuous (user_id, continuous_days, last_review_date) VALUES (?, 1, CURRENT_DATE)`,
+        [userId]
+      );
+
+      // 插入空的练习记录
+      await pool.execute(
+        `INSERT INTO practice_records (user_id, practice_date) VALUES (?, CURRENT_DATE)`,
+        [userId]
+      );
+
+      // 插入空的复习记录占位
+      await pool.execute(
+        `INSERT INTO review_records (user_id, question_id, review_stage, correct_count, total_review_count, memory_level, status) VALUES (?, 0, 1, 0, 0, 50, 0)`,
+        [userId]
+      );
+    } catch (initError) {
+      console.error('初始化用户数据失败:', initError);
+      // 不影响注册流程，只记录错误
+    }
+
     // 获取用户信息
     const [users] = await pool.execute(
       'SELECT id, username, nickname, avatar, email, phone, exam_target, daily_goal, weekly_days FROM users WHERE id = ?',

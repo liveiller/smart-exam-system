@@ -71,6 +71,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { questionBank } from '@/data/questions'
 import { updateReviewRecord, updateContinuousDays } from '@/utils/ebbinghaus'
+import { request } from '@/api/index'
 
 const router = useRouter()
 
@@ -96,23 +97,33 @@ const isCorrect = computed(() => {
 })
 
 // 加载复习题目
-const loadReviewQuestions = () => {
-  const tasks = JSON.parse(localStorage.getItem('currentReviewTasks') || '[]')
-  if (tasks.length === 0) {
-    ElMessage.warning('暂无复习任务')
+const loadReviewQuestions = async () => {
+  try {
+    // 从后端获取今日任务
+    const tasksData = await request.get('/review/tasks')
+
+    if (tasksData.code !== 200 || tasksData.data.length === 0) {
+      ElMessage.warning('暂无复习任务')
+      router.push('/review')
+      return
+    }
+
+    // 获取所有今日复习任务
+    const tasks = tasksData.data
+    currentTask.value = tasks[0]
+
+    // 根据知识点获取题目
+    const knowledgeId = currentTask.value.knowledgeId
+    const allQuestions = questionBank.filter(q => q.knowledgeId === knowledgeId)
+
+    // 随机选择题目
+    const count = Math.min(currentTask.value.questionCount || 5, allQuestions.length)
+    questions.value = [...allQuestions].sort(() => Math.random() - 0.5).slice(0, count)
+  } catch (error) {
+    console.error('加载复习题目失败:', error)
+    ElMessage.error('加载复习题目失败')
     router.push('/review')
-    return
   }
-  
-  currentTask.value = tasks[0]
-  
-  // 根据知识点获取题目
-  const knowledgeId = currentTask.value.knowledgeId
-  const allQuestions = questionBank.filter(q => q.knowledgeId === knowledgeId)
-  
-  // 随机选择题目
-  const count = Math.min(currentTask.value.questionCount || 5, allQuestions.length)
-  questions.value = [...allQuestions].sort(() => Math.random() - 0.5).slice(0, count)
 }
 
 // 提交答案
@@ -120,12 +131,12 @@ const submitAnswer = () => {
   const q = currentQuestion.value
   const userAnswer = q.type === 1 ? selectedAnswer.value : selectedAnswers.value.sort().join('')
   const correct = userAnswer === q.answer
-  
+
   reviewResults.value.push({
     questionId: q.id,
     isCorrect: correct
   })
-  
+
   showResult.value = true
 }
 
@@ -138,32 +149,32 @@ const nextQuestion = () => {
 }
 
 // 完成复习
-const finishReview = () => {
+const finishReview = async () => {
   // 更新复习记录
   const correctCount = reviewResults.value.filter(r => r.isCorrect).length
   const totalCount = reviewResults.value.length
   const overallCorrect = correctCount >= totalCount / 2
-  
-  // 获取并更新复习记录
-  const records = JSON.parse(localStorage.getItem('reviewRecords') || '[]')
-  const taskRecord = records.find(r => r.knowledgeId === currentTask.value.knowledgeId)
-  
-  if (taskRecord) {
-    const updated = updateReviewRecord(taskRecord, overallCorrect)
-    const index = records.findIndex(r => r.knowledgeId === currentTask.value.knowledgeId)
-    records[index] = updated
+
+  // 调用后端 API 更新复习记录
+  try {
+    const data = await request.post('/review/submit', {
+      results: reviewResults.value.map(r => ({
+        questionId: r.questionId,
+        isCorrect: r.isCorrect
+      }))
+    })
+
+    if (data.code === 200) {
+      ElMessage.success(`复习完成！答对 ${correctCount}/${totalCount} 题`)
+      router.push('/review')
+    } else {
+      ElMessage.error(data.message || '保存复习结果失败')
+    }
+  } catch (error) {
+    console.error('保存复习结果失败:', error)
+    ElMessage.error('保存复习结果失败')
+    router.push('/review')
   }
-  
-  localStorage.setItem('reviewRecords', JSON.stringify(records))
-  
-  // 更新连续天数
-  updateContinuousDays()
-  
-  // 清除临时数据
-  localStorage.removeItem('currentReviewTasks')
-  
-  ElMessage.success(`复习完成！答对 ${correctCount}/${totalCount} 题`)
-  router.push('/review')
 }
 
 onMounted(() => {

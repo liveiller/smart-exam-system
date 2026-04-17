@@ -15,6 +15,7 @@
             prefix-icon="User"
             size="large"
             :disabled="loading"
+            autocomplete="off"
           />
         </el-form-item>
 
@@ -28,6 +29,7 @@
             show-password
             @keyup.enter="handleLogin"
             :disabled="loading"
+            autocomplete="new-password"
           />
         </el-form-item>
 
@@ -45,7 +47,8 @@
       </el-form>
 
       <div class="login-footer">
-        <span>测试账号：任意输入即可登录</span>
+        <span>还没有账号？</span>
+        <router-link to="/register" class="link">立即注册</router-link>
       </div>
     </el-card>
   </div>
@@ -75,20 +78,13 @@ const handleLogin = async () => {
 
   loading.value = true
   try {
-    // 尝试调用后端 API
+    // 只调用后端 API
     await userStore.login(loginForm)
     ElMessage.success('登录成功')
     router.push('/dashboard')
   } catch (error) {
-    // 如果后端不可用，使用模拟登录
-    console.warn('后端连接失败，使用模拟登录')
-    userStore.setToken('test-token')
-    userStore.setUserInfo({
-      username: loginForm.username,
-      nickname: loginForm.username
-    })
-    ElMessage.success('登录成功（模拟模式）')
-    router.push('/dashboard')
+    ElMessage.error('登录失败，请检查用户名和密码')
+    console.error('登录错误:', error)
   } finally {
     loading.value = false
   }
@@ -128,9 +124,19 @@ const handleLogin = async () => {
 
     .login-footer {
       text-align: center;
-      color: #999;
-      font-size: 13px;
+      color: #666;
+      font-size: 14px;
       margin-top: 20px;
+
+      .link {
+        color: #409eff;
+        text-decoration: none;
+        margin-left: 5px;
+      }
+
+      .link:hover {
+        text-decoration: underline;
+      }
     }
   }
 }

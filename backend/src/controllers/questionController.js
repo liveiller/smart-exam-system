@@ -75,11 +75,11 @@ exports.getKnowledgePoints = async (req, res) => {
 
     query += ' ORDER BY kp.sort_order';
 
-    const [knowledgePoints] = await pool.execute(query, params);
+    const [reviewKnowledgePoints] = await pool.execute(query, params);
 
     res.status(200).json({
       code: 200,
-      data: knowledgePoints
+      data: reviewKnowledgePoints
     });
   } catch (error) {
     console.error('获取知识点列表错误:', error);
@@ -112,17 +112,17 @@ exports.getQuestionDetail = async (req, res) => {
       });
     }
 
-    // 解析 JSON 格式的选项
+    // 解析 JSON 格式的选项（MySQL2已自动解析，如果是字符串才需要手动解析）
     const question = questions[0];
-    if (question.options) {
+    if (typeof question.options === 'string') {
       question.options = JSON.parse(question.options);
     }
 
-    // 增加查看次数
-    await pool.execute(
-      'UPDATE questions SET view_count = view_count + 1 WHERE id = ?',
-      [id]
-    );
+    // 不增加查看次数（禁用题目级计数器）
+    // await pool.execute(
+    //   'UPDATE questions SET view_count = view_count + 1 WHERE id = ?',
+    //   [id]
+    // );
 
     res.status(200).json({
       code: 200,
@@ -140,7 +140,10 @@ exports.getQuestionDetail = async (req, res) => {
 // 获取练习题目
 exports.getPracticeQuestions = async (req, res) => {
   try {
-    const { knowledgeId, count = 10, difficulty = 0 } = req.query;
+    // 将所有查询参数转换为整数，防止预处理语句参数类型错误
+    const knowledgeId = req.query.knowledgeId ? parseInt(req.query.knowledgeId) : null;
+    const count = parseInt(req.query.count) || 10;
+    const difficulty = parseInt(req.query.difficulty) || 0;
 
     let query = `
       SELECT id, knowledge_id, type, difficulty, content, options, answer, analysis
@@ -159,21 +162,46 @@ exports.getPracticeQuestions = async (req, res) => {
       params.push(difficulty);
     }
 
+    // 先查询该知识点下有多少道题
+    const [countQuery] = await pool.query(
+      `SELECT COUNT(*) as total FROM questions WHERE status = 1 ${knowledgeId ? 'AND knowledge_id = ?' : ''} ${difficulty > 0 ? 'AND difficulty = ?' : ''}`,
+      knowledgeId ? (difficulty > 0 ? [knowledgeId, difficulty] : [knowledgeId]) : (difficulty > 0 ? [difficulty] : [])
+    );
+    const availableCount = countQuery[0].total;
+
+    // 如果可用题目数少于请求数量，使用实际可用数量
+    const actualCount = Math.min(count, availableCount);
+
     query += ' ORDER BY RAND() LIMIT ?';
-    params.push(parseInt(count));
+    params.push(actualCount);
 
-    const [questions] = await pool.execute(query, params);
+    const [questions] = await pool.query(query, params);
 
-    // 解析 JSON 格式的选项
+    // 处理 JSON 格式的选项
+    // MySQL 自动将 JSON 类型转换为对象，所以需要检查是否已经是对象
     questions.forEach(q => {
       if (q.options) {
-        q.options = JSON.parse(q.options);
+        if (typeof q.options === 'string') {
+          try {
+            q.options = JSON.parse(q.options);
+          } catch (e) {
+            // 如果解析失败，保持原样
+            console.warn(`Failed to parse options for question ${q.id}:`, e.message);
+          }
+        }
+        // 如果已经是对象，直接使用
       }
     });
 
+    // 如果返回的题目数少于请求的数量，添加提示信息
+    const message = availableCount < count
+      ? `该知识点下只有 ${availableCount} 道题，已全部返回`
+      : null;
+
     res.status(200).json({
       code: 200,
-      data: questions
+      data: questions,
+      message: message
     });
   } catch (error) {
     console.error('获取练习题目错误:', error);
@@ -220,15 +248,17 @@ exports.submitAnswer = async (req, res) => {
 
       if (isCorrect) {
         correctCount++;
-        await pool.execute(
-          'UPDATE questions SET correct_count = correct_count + 1 WHERE id = ?',
-          [answer.questionId]
-        );
+        // 不增加题目级计数器（禁用）
+        // await pool.execute(
+        //   'UPDATE questions SET correct_count = correct_count + 1 WHERE id = ?',
+        //   [answer.questionId]
+        // );
       } else {
-        await pool.execute(
-          'UPDATE questions SET wrong_count = wrong_count + 1 WHERE id = ?',
-          [answer.questionId]
-        );
+        // 不增加题目级计数器（禁用）
+        // await pool.execute(
+        //   'UPDATE questions SET wrong_count = wrong_count + 1 WHERE id = ?',
+        //   [answer.questionId]
+        // );
       }
 
       // 收集知识点统计
@@ -274,30 +304,85 @@ exports.submitAnswer = async (req, res) => {
             stats.total,
             stats.correct,
             stats.total > 0 ? (stats.correct / stats.total * 100).toFixed(2) : 0,
-            elapsed_time || 0
+            elapsed_time !== undefined ? elapsed_time : 0
           ]
         );
       }
+    }
 
-      // 为错误的题目创建复习记录
-      const wrongAnswers = answers.filter(a => {
-        const question = questionMap.get(a.questionId);
-        return question && question.knowledge_id === knowledgeId && a.userAnswer !== question.answer;
-      });
+    // 为所有知识点创建/更新复习记录（基于艾宾浩斯遗忘曲线）
+    const reviewKnowledgePoints = new Map();
 
-      for (const wrongAnswer of wrongAnswers) {
-        const existing = await pool.execute(
-          'SELECT id FROM review_records WHERE user_id = ? AND question_id = ?',
-          [userId, wrongAnswer.questionId]
+    // 统计每个知识点的答题情况
+    for (const answer of answers) {
+      const question = questionMap.get(answer.questionId);
+      if (!question || !question.knowledge_id) continue;
+
+      const isCorrect = answer.userAnswer === question.answer;
+      const kpId = question.knowledge_id;
+
+      if (!reviewKnowledgePoints.has(kpId)) {
+        reviewKnowledgePoints.set(kpId, { correct: isCorrect ? 1 : 0, total: 1, questions: [question.id] });
+      } else {
+        const kp = reviewKnowledgePoints.get(kpId);
+        kp.correct += isCorrect ? 1 : 0;
+        kp.total += 1;
+        kp.questions.push(question.id);
+      }
+    }
+
+    // 按知识点创建/更新复习记录
+    for (const [kpId, kp] of reviewKnowledgePoints) {
+      const correctRate = kp.total > 0 ? (kp.correct / kp.total * 100) : 0;
+
+      // 检查是否已存在复习记录
+      const [existing] = await pool.execute(
+        'SELECT id, review_stage, memory_level FROM review_records WHERE user_id = ? AND knowledge_id = ? AND status = 0',
+        [userId, kpId]
+      );
+
+      if (existing.length === 0) {
+        // 新知识点：创建复习记录
+        const memoryLevel = Math.round(60 + correctRate * 0.3);
+        const firstReviewInterval = correctRate >= 60 ? '30 MINUTE' : '5 MINUTE';
+        const firstQuestionId = kp.questions[0];
+
+        await pool.execute(
+          `INSERT INTO review_records (user_id, question_id, knowledge_id, review_stage, correct_count, total_review_count, memory_level, last_review_time, next_review_time)
+           VALUES (?, ?, ?, 0, ?, 1, ?, NOW(), DATE_ADD(NOW(), INTERVAL ${firstReviewInterval}))`,
+          [userId, firstQuestionId, kpId, correctRate > 0 ? 1 : 0, memoryLevel]
         );
+      } else {
+        // 已存在：更新记忆水平和下次复习时间
+        const record = existing[0];
+        const currentMemoryLevel = record.memory_level;
 
-        if (existing.length === 0) {
-          await pool.execute(
-            `INSERT INTO review_records (user_id, question_id, knowledge_id, review_stage, correct_count, total_review_count, memory_level, last_review_time, next_review_time)
-             VALUES (?, ?, ?, 1, 0, 1, 40, NOW(), DATE_ADD(NOW(), INTERVAL 5 MINUTE))`,
-            [userId, wrongAnswer.questionId, knowledgeId]
-          );
+        // 根据正确率调整记忆水平
+        let newMemoryLevel;
+        if (correctRate >= 80) {
+          newMemoryLevel = Math.min(100, currentMemoryLevel + 5);
+        } else if (correctRate >= 60) {
+          newMemoryLevel = Math.max(0, currentMemoryLevel - 2);
+        } else {
+          newMemoryLevel = Math.max(0, currentMemoryLevel - 5);
         }
+
+        const intervals = [
+          '5 MINUTE', '30 MINUTE', '12 HOUR', '1 DAY', '2 DAY', '4 DAY', '7 DAY', '15 DAY'
+        ];
+        const nextInterval = intervals[Math.min(record.review_stage, intervals.length - 1)];
+
+        await pool.execute(
+          `UPDATE review_records
+           SET review_stage = review_stage + 1,
+               correct_count = correct_count + ?,
+               total_review_count = total_review_count + 1,
+               memory_level = ?,
+               last_review_time = NOW(),
+               next_review_time = DATE_ADD(NOW(), INTERVAL ${nextInterval})
+           WHERE id = ?`,
+          [correctRate > 0 ? 1 : 0, newMemoryLevel, record.id]
+        );
       }
     }
 
@@ -322,6 +407,7 @@ exports.submitAnswer = async (req, res) => {
 
 // 获取题目统计
 exports.getQuestionStats = async (req, res) => {
+  console.log('getQuestionStats called!');
   try {
     const [stats] = await pool.execute(`
       SELECT
@@ -332,6 +418,7 @@ exports.getQuestionStats = async (req, res) => {
       FROM questions WHERE status = 1
     `);
 
+    console.log('getQuestionStats result:', stats[0]);
     res.status(200).json({
       code: 200,
       data: stats[0]
@@ -341,6 +428,47 @@ exports.getQuestionStats = async (req, res) => {
     res.status(500).json({
       code: 500,
       message: '获取题目统计失败'
+    });
+  }
+};
+
+// 获取练习历史
+exports.getPracticeHistory = async (req, res) => {
+  console.log('=== getPracticeHistory CALLED ===');
+  try {
+    const userId = req.user.userId;
+    const { limit = 5 } = req.query;
+    console.log('userId:', userId, 'limit:', limit);
+
+    const [history] = await pool.query(
+      `SELECT
+        s.name as subject_name,
+        kp.name as knowledge_name,
+        pr.knowledge_id,
+        pr.question_count,
+        pr.correct_count,
+        ROUND(pr.correct_count / pr.question_count * 100, 2) as accuracy,
+        pr.practice_date,
+        pr.elapsed_time
+       FROM practice_records pr
+       LEFT JOIN knowledge_points kp ON pr.knowledge_id = kp.id
+       LEFT JOIN chapters c ON kp.chapter_id = c.id
+       LEFT JOIN subjects s ON c.subject_id = s.id
+       WHERE pr.user_id = ?
+       ORDER BY pr.practice_date DESC
+       LIMIT ?`,
+      [userId, parseInt(limit)]
+    );
+
+    res.status(200).json({
+      code: 200,
+      data: history
+    });
+  } catch (error) {
+    console.error('获取练习历史错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '获取练习历史失败'
     });
   }
 };

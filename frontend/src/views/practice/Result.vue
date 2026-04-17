@@ -9,8 +9,9 @@
       <el-row :gutter="20" class="stats-row">
         <el-col :span="6">
           <div class="stat-item">
-            <div class="stat-value">{{ total }}</div>
-            <div class="stat-label">总题数</div>
+            <div class="stat-value">{{ actualCount || total }}</div>
+            <div class="stat-label">已完成</div>
+            <div class="stat-hint">共选择 {{ total }} 题</div>
           </div>
         </el-col>
         <el-col :span="6">
@@ -154,6 +155,7 @@ const router = useRouter()
 const questions = ref([])
 const record = ref({})
 const total = ref(0)
+const actualCount = ref(0)
 const correct = ref(0)
 const accuracy = ref(0)
 const elapsedTime = ref(0)
@@ -229,7 +231,7 @@ const formatUserAnswer = (q) => {
 const addToNotebook = (question) => {
   // 检查是否已存在
   const exists = notebookStore.questions.find(q => q.questionId === question.id)
-  
+
   if (exists) {
     // 已存在，增加错误次数
     exists.wrongCount = (exists.wrongCount || 1) + 1
@@ -238,6 +240,7 @@ const addToNotebook = (question) => {
     ElMessage.info('该题已在错题本中，错误次数已更新')
   } else {
     // 新错题，添加到错题本
+    const knowledgeId = question.knowledgeId || question.knowledge_id
     notebookStore.addQuestion({
       questionId: question.id,
       type: question.type,
@@ -247,9 +250,9 @@ const addToNotebook = (question) => {
       answer: question.answer,
       analysis: question.analysis,
       userAnswer: question.userAnswer,
-      knowledgeId: question.knowledgeId,
-      subjectName: getSubjectNameByKnowledge(question.knowledgeId),
-      knowledgeName: getKnowledgeName(question.knowledgeId)
+      knowledgeId: knowledgeId,
+      subjectName: getSubjectNameByKnowledge(knowledgeId),
+      knowledgeName: getKnowledgeName(knowledgeId)
     })
     ElMessage.success('已添加到错题本')
   }
@@ -267,7 +270,8 @@ const practiceSimilar = (knowledgeId) => {
 
 // 返回首页
 const goBack = () => {
-  router.push('/dashboard')
+  // 使用时间戳确保触发路由变化
+  router.push({ path: '/dashboard', query: { t: Date.now() } })
 }
 
 // 继续刷题
@@ -283,17 +287,25 @@ const goToReview = () => {
 onMounted(() => {
   // 优先从 localStorage 获取结果
   const savedResult = localStorage.getItem('practiceResult')
-  
+
   if (savedResult) {
     try {
       const result = JSON.parse(savedResult)
       questions.value = result.questions || []
       record.value = result.record || {}
       total.value = result.total || 0
+      actualCount.value = result.actualCount || questions.value.length
       correct.value = result.correct || 0
       accuracy.value = result.accuracy || 0
       elapsedTime.value = result.elapsedTime || 0
-      
+
+      // 确保每个题目都有 knowledgeId 字段
+      questions.value.forEach(q => {
+        if (!q.knowledgeId && q.knowledge_id) {
+          q.knowledgeId = q.knowledge_id
+        }
+      })
+
       // 清除已使用的数据
       localStorage.removeItem('practiceResult')
       return
@@ -308,9 +320,18 @@ onMounted(() => {
     questions.value = state.questions
     record.value = state.record || {}
     total.value = state.total || state.questions.length
+    actualCount.value = state.actualCount || questions.value.length
     correct.value = state.correct || 0
     accuracy.value = state.accuracy || 0
     elapsedTime.value = state.elapsedTime || 0
+
+    // 确保每个题目都有 knowledgeId 字段
+    questions.value.forEach(q => {
+      if (!q.knowledgeId && q.knowledge_id) {
+        q.knowledgeId = q.knowledge_id
+      }
+    })
+
     return
   }
   
@@ -319,9 +340,17 @@ onMounted(() => {
   if (progress.questions) {
     questions.value = progress.questions
     total.value = progress.questions.length
+    actualCount.value = questions.value.length
     correct.value = progress.questions.filter(q => q.isCorrect).length
     accuracy.value = total.value > 0 ? Math.round((correct.value / total.value) * 100) : 0
     elapsedTime.value = progress.elapsedTime || 0
+
+    // 确保每个题目都有 knowledgeId 字段
+    questions.value.forEach(q => {
+      if (!q.knowledgeId && q.knowledge_id) {
+        q.knowledgeId = q.knowledge_id
+      }
+    })
   }
 })
 </script>
@@ -357,13 +386,19 @@ onMounted(() => {
           font-weight: bold;
           color: #333;
         }
-        
+
         .stat-label {
           font-size: 14px;
           color: #999;
           margin-top: 5px;
         }
-        
+
+        .stat-hint {
+          font-size: 12px;
+          color: #999;
+          margin-top: 2px;
+        }
+
         &.success .stat-value { color: #67C23A; }
         &.excellent .stat-value { color: #67C23A; }
         &.good .stat-value { color: #E6A23C; }

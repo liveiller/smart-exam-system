@@ -281,62 +281,19 @@ export function getRecommendQuestions(knowledgeId, count = 5) {
 }
 
 /**
- * 初始化模拟数据（如果没有历史记录）
+ * 初始化模拟数据（已移除，不再使用模拟数据）
+ * 所有数据应该从后端 API 获取
  */
 export function initMockAnalysisData() {
-  const history = JSON.parse(localStorage.getItem('practiceHistory') || '[]')
-  
-  if (history.length === 0) {
-    const mockHistory = [
-      // 高等数学
-      { knowledgeId: 10102, questionCount: 15, correctCount: 9, accuracy: 60, date: '2026-04-15' },
-      { knowledgeId: 10103, questionCount: 10, correctCount: 5, accuracy: 50, date: '2026-04-14' },
-      { knowledgeId: 10201, questionCount: 12, correctCount: 10, accuracy: 83, date: '2026-04-15' },
-      { knowledgeId: 10202, questionCount: 8, correctCount: 6, accuracy: 75, date: '2026-04-13' },
-      // 英语
-      { knowledgeId: 20101, questionCount: 20, correctCount: 14, accuracy: 70, date: '2026-04-15' },
-      { knowledgeId: 20102, questionCount: 15, correctCount: 12, accuracy: 80, date: '2026-04-14' },
-      // 政治
-      { knowledgeId: 30101, questionCount: 10, correctCount: 7, accuracy: 70, date: '2026-04-15' },
-      { knowledgeId: 30102, questionCount: 8, correctCount: 5, accuracy: 63, date: '2026-04-13' },
-      // 计算机
-      { knowledgeId: 40101, questionCount: 12, correctCount: 8, accuracy: 67, date: '2026-04-14' },
-      { knowledgeId: 40102, questionCount: 10, correctCount: 9, accuracy: 90, date: '2026-04-15' }
-    ]
-    localStorage.setItem('practiceHistory', JSON.stringify(mockHistory))
-  }
-  
-  // 初始化错题本数据
-  const notebook = JSON.parse(localStorage.getItem('notebook') || '{"questions":[]}')
-  if (!notebook.questions || notebook.questions.length === 0) {
-    const mockNotebook = {
-      folders: [
-        { id: 1, name: '默认文件夹', parentId: null, icon: 'folder', sortOrder: 0 }
-      ],
-      questions: [
-        {
-          id: 1,
-          questionId: 1,
-          knowledgeId: 10102,
-          mastered: false,
-          wrongCount: 3
-        },
-        {
-          id: 2,
-          questionId: 3,
-          knowledgeId: 10103,
-          mastered: false,
-          wrongCount: 2
-        },
-        {
-          id: 3,
-          questionId: 9,
-          knowledgeId: 20101,
-          mastered: true,
-          wrongCount: 1
-        }
-      ]
-    }
-    localStorage.setItem('notebook', JSON.stringify(mockNotebook))
+  console.warn('initMockAnalysisData 已禁用，请使用后端 API 获取数据')
+
+  // 清除旧数据
+  localStorage.removeItem('practiceHistory')
+  localStorage.removeItem('notebook')
+  localStorage.removeItem('reviewRecords')
+
+  return {
+    success: true,
+    message: '数据已重置，请从后端获取真实数据'
   }
 }

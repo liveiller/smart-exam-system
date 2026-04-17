@@ -16,7 +16,7 @@
     </el-card>
     
     <!-- 题目卡片 -->
-    <el-card class="question-card" v-if="currentQuestion">
+    <el-card class="question-card" v-if="currentQuestion && !loading">
       <!-- 题目类型和难度 -->
       <div class="question-header">
         <el-tag :type="questionTypeTag">{{ questionTypeText }}</el-tag>
@@ -29,6 +29,12 @@
       <!-- 题目内容 -->
       <div class="question-content">
         <h3>{{ currentQuestion.content }}</h3>
+      </div>
+
+      <!-- 加载状态 -->
+      <div v-if="loading" style="text-align: center; padding: 40px;">
+        <el-icon :size="40" class="is-loading"><Loading /></el-icon>
+        <p style="margin-top: 10px; color: #999;">加载题目中...</p>
       </div>
       
       <!-- 选项 -->
@@ -48,7 +54,7 @@
               'wrong-option': showResult && selectedAnswer === key && key !== currentQuestion.answer
             }"
           >
-            <span class="option-label">{{ key }}.</span>
+            <span class="option-label">{{ ['A', 'B', 'C', 'D'][key] }}.</span>
             <span class="option-text">{{ option }}</span>
           </el-radio>
         </el-radio-group>
@@ -64,7 +70,7 @@
             :value="key"
             class="option-item"
           >
-            <span class="option-label">{{ key }}.</span>
+            <span class="option-label">{{ ['A', 'B', 'C', 'D'][key] }}.</span>
             <span class="option-text">{{ option }}</span>
           </el-checkbox>
         </el-checkbox-group>
@@ -74,8 +80,8 @@
           v-else-if="currentQuestion.type === 3"
           :disabled="showResult"
         >
-          <el-radio value="true" class="option-item">正确</el-radio>
-          <el-radio value="false" class="option-item">错误</el-radio>
+          <el-radio value="0" class="option-item">正确</el-radio>
+          <el-radio value="1" class="option-item">错误</el-radio>
         </el-radio-group>
       </div>
       
@@ -155,7 +161,9 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getPracticeQuestions, getKnowledgeName, getSubjectNameByKnowledge } from '../../data/questions'
+import { Loading } from '@element-plus/icons-vue'
+import { getPracticeQuestions, getKnowledgeName, getSubjectNameByKnowledge } from '@/data/questions'
+import request from '../../utils/request'
 
 const router = useRouter()
 
@@ -173,9 +181,15 @@ const practiceRecord = ref({
   correctCount: 0
 })
 
+// 练习配置（保存用户选择的题目数量）
+const practiceConfig = ref({
+  questionCount: 10
+})
+
 // 计时器
 const timer = ref(null)
 const elapsedTime = ref(0)
+const loading = ref(false)
 
 // 当前题目
 const currentQuestion = computed(() => questions.value[currentIndex.value])
@@ -239,6 +253,9 @@ const isCorrect = computed(() => {
   return q.isCorrect
 })
 
+// 将数字索引转换为字母（ABCD）
+const indexToLetter = (index) => ['A', 'B', 'C', 'D'][index]
+
 // 格式化答案
 const formatAnswer = (answer) => {
   if (!answer) return ''
@@ -258,38 +275,59 @@ const getSheetItemClass = (index) => {
 }
 
 // 加载题目
-const loadQuestions = () => {
+const loadQuestions = async () => {
   const config = JSON.parse(localStorage.getItem('currentPractice') || '{}')
-  
+
   if (!config.knowledgeId) {
     ElMessage.error('请先选择练习内容')
     router.push('/practice/start')
     return
   }
-  
-  // 获取题目
-  let qs = getPracticeQuestions(
-    config.knowledgeId, 
-    config.questionCount || 10,
-    config.difficulty || 0
-  )
-  
-  // 如果没有足够的题目，补充其他知识点的题目
-  if (qs.length < config.questionCount) {
-    qs = getPracticeQuestions(config.knowledgeId, 100, 0).slice(0, config.questionCount)
+
+  loading.value = true
+
+  try {
+    // 获取题目
+    const data = await request.get('/questions/practice/questions', {
+      params: {
+        knowledgeId: config.knowledgeId,
+        count: config.questionCount || 10,
+        difficulty: config.difficulty || 0
+      }
+    })
+
+    if (data && data.data && data.data.length > 0) {
+      questions.value = data.data.map(q => ({
+        ...q,
+        // 统一字段名为驼峰命名
+        knowledgeId: q.knowledgeId || q.knowledge_id,
+        userAnswer: undefined,
+        isCorrect: undefined
+      }))
+
+      // 如果返回的题目数少于选择的数量，显示提示
+      const expectedCount = config.questionCount || 10
+      const actualCount = questions.value.length
+      if (actualCount < expectedCount) {
+        ElMessage.warning(`该知识点下只有 ${actualCount} 道题，已全部返回`)
+      }
+
+      // 保存用户选择的题目数量（用于结果显示）
+      practiceConfig.questionCount = config.questionCount || 10
+    } else {
+      ElMessage.warning('当前知识点下没有足够的题目')
+      router.push('/practice/start')
+      return
+    }
+  } catch (error) {
+    console.error('加载题目失败:', error)
+    ElMessage.error('加载题目失败，请重试')
+    router.push('/practice/start')
+    return
+  } finally {
+    loading.value = false
   }
-  
-  questions.value = qs.map(q => ({
-    ...q,
-    userAnswer: undefined,
-    isCorrect: undefined
-  }))
-  
-  // 如果还是没有题目，使用模拟数据
-  if (questions.value.length === 0) {
-    questions.value = generateMockQuestions(config.questionCount)
-  }
-  
+
    // 重置答题记录
   practiceRecord.value = {
     startTime: Date.now(),
@@ -298,7 +336,7 @@ const loadQuestions = () => {
   }
 }
 
-// 生成模拟题目
+// 生成模拟题目（仅用于调试）
 const generateMockQuestions = (count) => {
   const mockQuestions = []
   for (let i = 0; i < count; i++) {
@@ -324,41 +362,57 @@ const generateMockQuestions = (count) => {
 }
 
 // 提交答案
-const submitAnswer = () => {
+const submitAnswer = async () => {
   const q = currentQuestion.value
   let userAnswer
-  
+
   if (q.type === 1) {
-    userAnswer = selectedAnswer.value
+    userAnswer = indexToLetter(selectedAnswer.value)
   } else if (q.type === 2) {
-    userAnswer = selectedAnswers.value.sort().join('')
+    userAnswer = selectedAnswers.value.map(idx => indexToLetter(idx)).sort().join('')
   } else {
     userAnswer = selectedAnswer.value
   }
-  
+
   const isCorrect = userAnswer === q.answer
-  
+
   // 如果这道题之前没答过，才记录
   if (q.userAnswer === undefined) {
-    q.userAnswer = userAnswer
-    q.isCorrect = isCorrect
-    
-    practiceRecord.value.answers.push({
-      questionId: q.id,
-      userAnswer,
-      isCorrect,
-      time: elapsedTime.value
-    })
-    
-    if (isCorrect) {
-      practiceRecord.value.correctCount++
+    // 调用后端 API 保存答案
+    try {
+      const result = await request.post('/questions/answer', {
+        answers: [{
+          questionId: q.id,
+          userAnswer: userAnswer
+        }]
+      })
+
+      // 使用后端返回的结果更新题目状态
+      if (result.data && result.data && result.data.results && result.data.results.length > 0) {
+        const backendResult = result.data.results[0]
+        q.userAnswer = backendResult.userAnswer
+        q.isCorrect = backendResult.isCorrect
+      }
+
+      practiceRecord.value.answers.push({
+        questionId: q.id,
+        userAnswer,
+        isCorrect: q.isCorrect,
+        time: elapsedTime.value
+      })
+
+      if (q.isCorrect) {
+        practiceRecord.value.correctCount++
+      }
+    } catch (error) {
+      console.error('提交答案错误:', error)
     }
   } else {
     // 更新答案（如果修改）
     const oldIsCorrect = q.isCorrect
     q.userAnswer = userAnswer
     q.isCorrect = isCorrect
-    
+
     // 更新统计
     if (oldIsCorrect && !isCorrect) {
       practiceRecord.value.correctCount--
@@ -366,7 +420,7 @@ const submitAnswer = () => {
       practiceRecord.value.correctCount++
     }
   }
-  
+
   showResult.value = true
   saveProgress()
 }
@@ -426,34 +480,45 @@ const saveProgress = () => {
 }
 
 // 完成刷题
-  const finishPractice = () => {
+  const finishPractice = async () => {
   const total = questions.value.length
   const correct = practiceRecord.value.correctCount
   const accuracy = Math.round((correct / total) * 100)
-  
-  // 保存历史记录
-  saveHistory(accuracy, correct, total)
-  
-  // 更新复习记录
-  updateReviewRecords()
-  
+  const requestedCount = practiceConfig.value.questionCount
+
+  // 调用后端 API 提交所有答案
+  try {
+    const answers = questions.value.map(q => ({
+      questionId: q.id,
+      userAnswer: q.userAnswer || ''
+    }))
+
+    await request.post('/questions/answer', {
+      answers: answers,
+      elapsed_time: elapsedTime.value
+    })
+  } catch (error) {
+    console.error('提交答案错误:', error)
+  }
+
   // 准备传递给结果页的数据
   const resultData = {
     questions: questions.value,
     record: practiceRecord.value,
     accuracy,
     correct,
-    total,
+    total: requestedCount,
+    actualCount: total,
     elapsedTime: elapsedTime.value
   }
-  
+
   // 保存到 localStorage，确保结果页能获取
   localStorage.setItem('practiceResult', JSON.stringify(resultData))
-  
+
   // 清除进度
   localStorage.removeItem('practiceProgress')
   localStorage.removeItem('currentPractice')
-  
+
   // 跳转到结果页
   router.push('/practice/result')
 }
@@ -482,13 +547,14 @@ const saveHistory = (accuracy, correct, total) => {
 const updateReviewRecords = () => {
   const config = JSON.parse(localStorage.getItem('currentPractice') || '{}')
   const records = JSON.parse(localStorage.getItem('reviewRecords') || '[]')
-  
+
   // 为每个答错的题目创建复习记录
   questions.value.forEach(q => {
     if (!q.isCorrect) {
+      const knowledgeId = q.knowledgeId || q.knowledge_id
       records.push({
         questionId: q.id,
-        knowledgeId: q.knowledgeId,
+        knowledgeId: knowledgeId,
         reviewStage: 1,
         memoryLevel: 30,
         correctCount: 0,
@@ -521,7 +587,7 @@ const startTimer = () => {
 const tryRestoreProgress = async () => {
   const saved = localStorage.getItem('practiceProgress')
   if (!saved) return false
-  
+
   try {
     const progress = JSON.parse(saved)
     // 只恢复2小时内的进度
@@ -535,8 +601,10 @@ const tryRestoreProgress = async () => {
           type: 'info'
         }
       ).catch(() => false)
-      
+
       if (result) {
+        // 从后端重新加载进度数据
+        const config = JSON.parse(localStorage.getItem('currentPractice') || '{}')
         questions.value = progress.questions
         currentIndex.value = progress.currentIndex
         practiceRecord.value = progress.record
@@ -547,7 +615,7 @@ const tryRestoreProgress = async () => {
   } catch (e) {
     console.error('恢复进度失败:', e)
   }
-  
+
   localStorage.removeItem('practiceProgress')
   return false
 }
@@ -555,7 +623,7 @@ const tryRestoreProgress = async () => {
 onMounted(async () => {
   const restored = await tryRestoreProgress()
   if (!restored) {
-    loadQuestions()
+    await loadQuestions()
   }
   startTimer()
 })

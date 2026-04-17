@@ -137,12 +137,18 @@ exports.getKnowledgeMastery = async (req, res) => {
 
       const masteryRate = wrong.wrong_count > 0
         ? (wrong.mastered_count / wrong.wrong_count * 100).toFixed(2)
-        : 100;
+        : 0;
 
-      // 综合掌握度
-      let mastery = 50;
+      // 综合掌握度，初始为 0
+      let mastery = 0;
       if (practice.total_questions > 0) {
-        mastery = parseFloat(correctRate) * 0.6 + parseFloat(masteryRate) * 0.4;
+        // 如果有错题记录，加入掌握度加权
+        if (wrong.wrong_count > 0) {
+          mastery = parseFloat(correctRate) * 0.7 + parseFloat(masteryRate) * 0.3;
+        } else {
+          // 没有错题记录，完全基于正确率
+          mastery = parseFloat(correctRate);
+        }
       } else if (wrong.wrong_count > 0) {
         mastery = parseFloat(masteryRate);
       }
@@ -268,26 +274,65 @@ exports.getKnowledgeTree = async (req, res) => {
     // 添加知识点
     for (const item of data) {
       const chapter = chapterMap.get(item.chapter_id);
+
+      // 获取该知识点的题目统计
+      const [questionStats] = await pool.execute(
+        `SELECT
+           COUNT(DISTINCT q.id) as total_questions,
+           COUNT(DISTINCT CASE WHEN pr.user_id = ? THEN q.id ELSE NULL END) as answered_questions,
+           COUNT(DISTINCT CASE WHEN pr.user_id = ? AND pr.correct_count > 0 THEN q.id ELSE NULL END) as correct_questions
+         FROM questions q
+         LEFT JOIN practice_records pr ON pr.knowledge_id = ? AND pr.user_id = ?
+         WHERE q.knowledge_id = ?`,
+        [userId, userId, item.knowledge_id, userId, item.knowledge_id]
+      );
+
+      const stats = questionStats[0] || { total_questions: 0, answered_questions: 0, correct_questions: 0 };
+      const totalQuestions = parseInt(stats.total_questions) || 0;
+      const answeredQuestions = parseInt(stats.answered_questions) || 0;
+      const correctQuestions = parseInt(stats.correct_questions) || 0;
       const mastery = await calculateKnowledgeMastery(userId, item.knowledge_id);
+      const correctRate = totalQuestions > 0
+        ? parseFloat((correctQuestions / totalQuestions * 100).toFixed(2))
+        : 0;
 
       chapter.children.push({
         id: item.knowledge_id,
         name: item.knowledge_name,
         level: 2,
+        totalQuestions: totalQuestions,
+        answeredQuestions: answeredQuestions,
+        correctRate: correctRate,
         mastery,
         masteryLevel: getMasteryLevel(mastery)
       });
     }
 
-    // 计算章节平均掌握度
+    // 计算章节统计
     for (const chapter of chapterMap.values()) {
       if (chapter.children.length > 0) {
+        // 计算平均掌握度
         const avgMastery = chapter.children.reduce((sum, child) => sum + child.mastery, 0) / chapter.children.length;
         chapter.mastery = Math.round(avgMastery);
         chapter.masteryLevel = getMasteryLevel(Math.round(avgMastery));
+
+        // 累加题目统计
+        const totalQuestions = chapter.children.reduce((sum, child) => sum + (child.totalQuestions || 0), 0);
+        const answeredQuestions = chapter.children.reduce((sum, child) => sum + (child.answeredQuestions || 0), 0);
+        const totalCorrect = chapter.children.reduce((sum, child) => sum + (child.correctRate * child.totalQuestions / 100), 0);
+        const correctRate = totalQuestions > 0
+          ? parseFloat((totalCorrect / totalQuestions * 100).toFixed(2))
+          : 0;
+
+        chapter.totalQuestions = totalQuestions;
+        chapter.answeredQuestions = answeredQuestions;
+        chapter.correctRate = correctRate;
       } else {
-        chapter.mastery = 50;
-        chapter.masteryLevel = 3;
+        chapter.mastery = 0;
+        chapter.masteryLevel = 1;
+        chapter.totalQuestions = 0;
+        chapter.answeredQuestions = 0;
+        chapter.correctRate = 0;
       }
     }
 
@@ -361,20 +406,31 @@ async function calculateKnowledgeMastery(userId, knowledgeId) {
     const practice = practiceData[0] || { total_questions: 0, correct_count: 0 };
     const wrong = wrongData[0] || { wrong_count: 0, mastered_count: 0 };
 
-    let mastery = 50;
+    // 初始掌握度为 0，完全基于正确率计算
+    let mastery = 0;
 
     if (practice.total_questions > 0) {
-      const correctRate = practice.correct_count / practice.total_questions * 100;
-      const masterRate = wrong.wrong_count > 0 ? wrong.mastered_count / wrong.wrong_count * 100 : 100;
-      mastery = correctRate * 0.6 + masterRate * 0.4;
+      // 基于练习正确率计算（主要依据）
+      const correctRate = (practice.correct_count / practice.total_questions) * 100;
+
+      // 如果有错题记录，加入掌握度加权
+      if (wrong.wrong_count > 0) {
+        const masterRate = (wrong.mastered_count / wrong.wrong_count) * 100;
+        // 正确率70% + 错题掌握率30%
+        mastery = correctRate * 0.7 + masterRate * 0.3;
+      } else {
+        // 没有错题记录时，完全基于正确率
+        mastery = correctRate;
+      }
     } else if (wrong.wrong_count > 0) {
-      mastery = wrong.mastered_count / wrong.wrong_count * 100;
+      // 没有练习记录但有错题，基于错题掌握度
+      mastery = (wrong.mastered_count / wrong.wrong_count) * 100;
     }
 
     return Math.round(mastery);
   } catch (error) {
     console.error('计算知识点掌握度错误:', error);
-    return 50;
+    return 0;
   }
 }
 

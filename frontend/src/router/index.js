@@ -2,6 +2,43 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   {
+    path: '/test-simple',
+    name: 'TestSimple',
+    component: () => import('@/views/test-simple.vue'),
+    meta: { title: '简单测试' }
+  },
+  {
+    path: '/test-data',
+    name: 'TestData',
+    component: () => import('@/views/test-data.vue'),
+    meta: { title: '数据测试' }
+  },
+  {
+    path: '/clean-all-data',
+    name: 'CleanAllData',
+    component: () => import('@/views/clean-all-data.vue'),
+    meta: { title: '清理所有数据' }
+  },
+  {
+    path: '/clean-final',
+    name: 'CleanFinal',
+    component: () => import('@/views/clean-final.vue'),
+    meta: { title: '终极数据清理' }
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/views/register/index.vue'),
+    meta: { title: '注册' }
+  },
+  {
+    path: '/register-debug',
+    name: 'RegisterDebug',
+    component: () => import('@/views/register/debug.vue'),
+    meta: { title: '注册调试' }
+  },
+
+  {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/login/index.vue'),
@@ -109,8 +146,13 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   document.title = to.meta.title ? `${to.meta.title} - 考研智能刷题` : '考研智能刷题'
-  
-  if (to.path !== '/login' && !token) {
+
+  // 不需要登录的页面
+  const publicPages = ['/login', '/register', '/register-debug', '/test-simple']
+
+  if (publicPages.includes(to.path)) {
+    next()
+  } else if (!token) {
     next('/login')
   } else {
     next()

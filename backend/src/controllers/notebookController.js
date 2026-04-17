@@ -139,8 +139,8 @@ exports.addToNotebook = async (req, res) => {
     // 新增错题
     const [result] = await pool.execute(
       `INSERT INTO notebook (user_id, question_id, knowledge_id, folder_id, wrong_count, last_wrong_time, mastered)
-       VALUES (?, ?, ?, 1, 1, NOW(), 0)`,
-      [userId, questionId, knowledgeId]
+       VALUES (?, ?, ?, ?, 1, NOW(), 0)`,
+      [userId, questionId, knowledgeId, 1]
     );
 
     res.status(200).json({

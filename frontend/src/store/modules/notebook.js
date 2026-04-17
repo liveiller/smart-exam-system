@@ -24,7 +24,7 @@ export const useNotebookStore = defineStore('notebook', {
     folderTree: (state) => {
       const buildTree = (parentId = null) => {
         return state.folders
-          .filter(f => f.parent_id === parentId)
+          .filter(f => f.parentId === parentId)
           .map(f => ({
             ...f,
             children: buildTree(f.id)
@@ -36,7 +36,7 @@ export const useNotebookStore = defineStore('notebook', {
     // 获取当前文件夹下的错题
     currentFolderQuestions: (state) => {
       if (!state.currentFolder) return state.questions
-      return state.questions.filter(q => q.folder_id === state.currentFolder)
+      return state.questions.filter(q => q.folderId === state.currentFolder)
     },
 
     // 统计数据
@@ -51,39 +51,21 @@ export const useNotebookStore = defineStore('notebook', {
   actions: {
     // 初始化数据
     async initData() {
-      // 总是先尝试从后端获取数据
+      // 只从后端获取数据，不使用 localStorage 作为后备
       await this.fetchFolders()
       await this.fetchQuestions()
-
-      // 如果获取失败或数据为空，使用 localStorage 作为后备
-      if (this.questions.length === 0) {
-        this.initFromLocalStorage()
-      }
     },
 
-    // 从 localStorage 初始化（后备方案）
+    // 从 localStorage 初始化（已移除，不再使用 localStorage 作为后备）
     initFromLocalStorage() {
-      const saved = localStorage.getItem('notebook')
-      if (saved) {
-        const data = JSON.parse(saved)
-        this.folders = data.folders || []
-        this.questions = data.questions || []
-      } else {
-        // 初始化默认文件夹
-        this.folders = [
-          { id: 1, name: '默认文件夹', parent_id: null, icon: 'folder', sort_order: 0 }
-        ]
-        this.questions = []
-        this.saveToStorage()
-      }
+      // 不再执行任何操作
+      console.warn('localStorage 后备方案已禁用，请确保后端数据正确加载')
     },
 
-    // 保存到本地存储（后备方案）
+    // 保存到本地存储（已禁用，不再使用 localStorage）
     saveToStorage() {
-      localStorage.setItem('notebook', JSON.stringify({
-        folders: this.folders,
-        questions: this.questions
-      }))
+      // 不再保存到 localStorage
+      console.warn('localStorage 保存已禁用')
     },
 
     // 获取文件夹列表
@@ -124,10 +106,10 @@ export const useNotebookStore = defineStore('notebook', {
         const knowledgeId = question.knowledge_id || question.knowledgeId
 
         // 检查是否已存在
-        const exists = this.questions.find(q => q.question_id === questionId)
+        const exists = this.questions.find(q => q.questionId === questionId)
         if (exists) {
-          exists.wrong_count = (exists.wrong_count || 1) + 1
-          exists.last_wrong_time = new Date().toISOString()
+          exists.wrongCount = (exists.wrongCount || 1) + 1
+          exists.lastWrongTime = new Date().toISOString()
         } else {
           const response = await addToNotebookApi({
             questionId: questionId,
@@ -148,18 +130,18 @@ export const useNotebookStore = defineStore('notebook', {
     addToNotebookLocal(question) {
       const questionId = question.question_id || question.id || question.questionId
 
-      const exists = this.questions.find(q => q.question_id === questionId)
+      const exists = this.questions.find(q => q.questionId === questionId)
       if (exists) {
-        exists.wrong_count = (exists.wrong_count || 1) + 1
-        exists.last_wrong_time = new Date().toISOString()
+        exists.wrongCount = (exists.wrongCount || 1) + 1
+        exists.lastWrongTime = new Date().toISOString()
       } else {
         this.questions.push({
           id: Date.now() + Math.random().toString(36).substr(2, 9),
-          question_id: questionId,
-          folder_id: 1,
+          questionId: questionId,
+          folderId: 1,
           ...question,
-          wrong_count: 1,
-          last_wrong_time: new Date().toISOString(),
+          wrongCount: 1,
+          lastWrongTime: new Date().toISOString(),
           mastered: false,
           notes: '',
           tags: []
@@ -193,12 +175,12 @@ export const useNotebookStore = defineStore('notebook', {
         await deleteFolderApi(folderId)
         // 将文件夹下的错题移到默认文件夹
         this.questions.forEach(q => {
-          if (q.folder_id === folderId) {
-            q.folder_id = 1
+          if (q.folderId === folderId) {
+            q.folderId = 1
           }
         })
         // 删除子文件夹
-        this.folders = this.folders.filter(f => f.id !== folderId && f.parent_id !== folderId)
+        this.folders = this.folders.filter(f => f.id !== folderId && f.parentId !== folderId)
         this.saveToStorage()
       } catch (error) {
         console.error('删除文件夹失败:', error)
@@ -212,7 +194,7 @@ export const useNotebookStore = defineStore('notebook', {
         await moveQuestionApi(questionId, { folderId })
         const question = this.questions.find(q => q.id === questionId)
         if (question) {
-          question.folder_id = folderId
+          question.folderId = folderId
           this.saveToStorage()
           return true
         }
