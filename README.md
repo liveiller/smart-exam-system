@@ -70,7 +70,7 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-username/smart-exam-system.git
+git clone https://github.com/liveiller/smart-exam-system.git
 cd smart-exam-system
 ```
 

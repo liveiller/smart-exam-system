@@ -1,0 +1,22 @@
+# 设置换行符规则，确保跨平台兼容
+* text=auto eol=lf
+
+# 脚本文件使用 LF 换行符
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# JSON 和 JS 使用 LF 换行符
+*.json text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.vue text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+
+# 二进制文件
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary

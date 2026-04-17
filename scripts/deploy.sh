@@ -14,24 +14,24 @@ NC='\033[0m' # No Color
 
 # 打印带颜色的信息
 print_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    printf "%b[INFO]%b %s\n" "${BLUE}" "${NC}" "$1"
 }
 
 print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    printf "%b[SUCCESS]%b %s\n" "${GREEN}" "${NC}" "$1"
 }
 
 print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    printf "%b[WARNING]%b %s\n" "${YELLOW}" "${NC}" "$1"
 }
 
 print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    printf "%b[ERROR]%b %s\n" "${RED}" "${NC}" "$1"
 }
 
 # 检查命令是否存在
 check_command() {
-    if ! command -v $1 &> /dev/null; then
+    if ! command -v "$1" &> /dev/null; then
         print_error "$1 未安装，请先安装 $1"
         exit 1
     fi

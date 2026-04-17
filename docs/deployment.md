@@ -29,7 +29,7 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-username/smart-exam-system.git
+git clone https://github.com/liveiller/smart-exam-system.git
 cd smart-exam-system
 ```
 
@@ -498,5 +498,5 @@ sudo systemctl reload nginx
 
 如有问题，请通过以下方式联系：
 
-- GitHub Issues: [项目 Issues](https://github.com/yourusername/smart-exam-system/issues)
+- GitHub Issues: [项目 Issues](https://github.com/liveiller/smart-exam-system/issues)
 - Email: your.email@example.com

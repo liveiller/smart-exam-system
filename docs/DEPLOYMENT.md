@@ -4,9 +4,9 @@
 
 本文档将指导您如何快速部署本系统到生产环境。
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/smart-exam-system)
-[![Deploy to Koyeb](https://www.koyeb.com/deploy?repository_url=https://github.com/your-username/smart-exam-system)](https://www.koyeb.com/deploy)
-[![Deploy to Render](https://render.com/deploy?repo=https://github.com/your-username/smart-exam-system)]
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/liveiller/smart-exam-system)
+[![Deploy to Koyeb](https://www.koyeb.com/deploy?repository_url=https://github.com/liveiller/smart-exam-system)](https://www.koyeb.com/deploy)
+[![Deploy to Render](https://render.com/deploy?repo=https://github.com/liveiller/smart-exam-system)]
 
 ---
 
@@ -38,7 +38,7 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-username/smart-exam-system.git
+git clone https://github.com/liveiller/smart-exam-system.git
 cd smart-exam-system
 
 # 启动所有服务
@@ -280,7 +280,7 @@ server {
 
 ### Vercel（前端）
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/smart-exam-system)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/liveiller/smart-exam-system)
 
 1. Fork 本项目到你的 GitHub
 2. 在 Vercel 中导入项目
@@ -302,7 +302,7 @@ server {
 
 ### Render
 
-[![Deploy on Render](https://render.com/deploy)](https://render.com/deploy?repo=https://github.com/your-username/smart-exam-system)
+[![Deploy on Render](https://render.com/deploy)](https://render.com/deploy?repo=https://github.com/liveiller/smart-exam-system)
 
 1. 创建新 Web Service
 2. 连接 GitHub 仓库
@@ -383,9 +383,9 @@ server {
 ## 📞 技术支持
 
 - 📧 **Email**: your.email@example.com
-- 💬 **GitHub Issues**: [提交问题](https://github.com/your-username/smart-exam-system/issues)
+- 💬 **GitHub Issues**: [提交问题](https://github.com/liveiller/smart-exam-system/issues)
 - 💬 **QQ群**: 123456789
-- 📖 **文档**: [查看完整文档](https://github.com/your-username/smart-exam-system/docs)
+- 📖 **文档**: [查看完整文档](https://github.com/liveiller/smart-exam-system/docs)
 
 ---
 
@@ -393,7 +393,7 @@ server {
 
 如果这个项目对你有帮助，请给我们一个 Star ⭐
 
-[![Star History Chart](https://api.star-history.com/svg?repos=your-username/smart-exam-system&type=Date)](https://star-history.com/#your-username/smart-exam-system&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=liveiller/smart-exam-system&type=Date)](https://star-history.com/#liveiller/smart-exam-system&Date)
 
 ---
 
@@ -402,8 +402,8 @@ server {
 **Made with ❤️ by Smart Exam System Team**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![GitHub issues](https://img.shields.io/github/issues/your-username/smart-exam-system.svg)](https://github.com/your-username/smart-exam-system/issues)
-[![GitHub forks](https://img.shields.io/github/forks/your-username/smart-exam-system.svg)](https://github.com/your-username/smart-exam-system/network)
-[![GitHub stars](https.shields.io/github/stars/your-username/smart-exam-system.svg)](https://github.com/your-username/smart-exam-system/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/liveiller/smart-exam-system.svg)](https://github.com/liveiller/smart-exam-system/issues)
+[![GitHub forks](https://img.shields.io/github/forks/liveiller/smart-exam-system.svg)](https://github.com/liveiller/smart-exam-system/network)
+[![GitHub stars](https.shields.github.io/github/stars/liveiller/smart-exam-system.svg)](https://github.com/liveiller/smart-exam-system/stargazers)
 
 </div>
